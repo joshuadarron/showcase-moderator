@@ -1,5 +1,5 @@
-import 'dotenv/config';
-import {
+require('dotenv/config');
+const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
@@ -11,7 +11,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   PermissionFlagsBits,
-} from 'discord.js';
+} = require('discord.js');
 
 const TRACK_COLORS = {
   'Startup':       0x5865F2,
