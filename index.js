@@ -1,83 +1,213 @@
-import "dotenv/config";
-import pkg from "discord.js";
+import 'dotenv/config';
+import {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ButtonBuilder,
+  ButtonStyle,
+  PermissionFlagsBits,
+} from 'discord.js';
 
-const { Client, Intents } = pkg;
+const TRACK_COLORS = {
+  'Startup':       0x5865F2,
+  'Internal Tool': 0xFEE75C,
+  'AI System':     0x57F287,
+};
+
+const STATUS_EMOJI = {
+  'Prototype': '🔧',
+  'MVP':       '🚀',
+  'Production': '✅',
+};
+
+const FOOTER_TEXT = 'RocketRide Project Showcase · #submissions';
 
 const client = new Client({
-	  intents: [
-		      Intents.FLAGS.GUILDS,
-		      Intents.FLAGS.GUILD_MESSAGES,
-		      Intents.FLAGS.DIRECT_MESSAGES,
-		    ],
-	  partials: ["CHANNEL"], // required for DMs in v13
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+  ],
 });
 
-const SHOWCASE_CHANNEL_ID = process.env.SHOWCASE_CHANNEL_ID;
+client.on('interactionCreate', async (interaction) => {
+  // /submit — show track select menu
+  if (interaction.isChatInputCommand() && interaction.commandName === 'submit') {
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('select_track')
+      .setPlaceholder('Pick a track')
+      .addOptions(
+        { label: 'Startup',       emoji: '💼', description: 'Building a product or business',       value: 'Startup' },
+        { label: 'Internal Tool', emoji: '🔧', description: 'Tooling for your team or workflow',    value: 'Internal Tool' },
+        { label: 'AI System',     emoji: '🤖', description: 'Agent, pipeline, or AI-native system', value: 'AI System' },
+      );
 
-const REQUIRED_FIELDS = [
-	  /project name/i,
-	  /track:\s*(startup|internal tool|ai system)/i,
-	  /problem:/i,
-	  /what i built:/i,
-	  /how it uses/i,
-	  /(demo|repo):/i,
-	  /current status:/i,
-	  /feedback wanted:/i,
-];
+    const row = new ActionRowBuilder().addComponents(select);
 
-const TEMPLATE = `
-Project Name:
+    await interaction.reply({
+      content: '**Step 1 of 2** — Pick your track, then fill out the submission form.',
+      components: [row],
+      ephemeral: true,
+    });
+    return;
+  }
 
-Track: Startup | Internal Tool | AI System
+  // Track selection → show modal
+  if (interaction.isStringSelectMenu() && interaction.customId === 'select_track') {
+    const track = interaction.values[0];
 
-Problem:
+    const modal = new ModalBuilder()
+      .setCustomId(`submit_modal:${track}`)
+      .setTitle(`Submit Project — ${track}`);
 
-What I built:
+    const projectName = new TextInputBuilder()
+      .setCustomId('project_name')
+      .setLabel('Project name')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(80);
 
-How it uses our platform:
+    const problem = new TextInputBuilder()
+      .setCustomId('problem')
+      .setLabel('Problem')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(500);
 
-Demo / Repo:
+    const built = new TextInputBuilder()
+      .setCustomId('built')
+      .setLabel('What I built + how it uses RocketRide')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(600)
+      .setPlaceholder('What you made, and which nodes/SDK features you used.');
 
-Current status:
-(Prototype / MVP / Production)
+    const demoStatus = new TextInputBuilder()
+      .setCustomId('demo_status')
+      .setLabel('Demo / Repo  +  Status')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(200)
+      .setPlaceholder('github.com/... | Prototype / MVP / Production');
 
-Feedback wanted:
-`;
+    const feedback = new TextInputBuilder()
+      .setCustomId('feedback')
+      .setLabel('Feedback wanted')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(300);
 
-client.on("messageCreate", async (message) => {
-	  if (message.author.bot) return;
-	  if (message.channelId !== SHOWCASE_CHANNEL_ID) return;
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(projectName),
+      new ActionRowBuilder().addComponents(problem),
+      new ActionRowBuilder().addComponents(built),
+      new ActionRowBuilder().addComponents(demoStatus),
+      new ActionRowBuilder().addComponents(feedback),
+    );
 
-	  setTimeout(async () => {
-		      const refreshed = await message.fetch();
+    await interaction.showModal(modal);
+    return;
+  }
 
-		      const valid = REQUIRED_FIELDS.every((r) =>
-			            r.test(refreshed.content)
-			          );
+  // Modal submit → build embed + thread
+  if (interaction.isModalSubmit() && interaction.customId.startsWith('submit_modal:')) {
+    const track       = interaction.customId.split(':')[1];
+    const projectName = interaction.fields.getTextInputValue('project_name');
+    const problem     = interaction.fields.getTextInputValue('problem');
+    const built       = interaction.fields.getTextInputValue('built');
+    const demoStatus  = interaction.fields.getTextInputValue('demo_status');
+    const feedback    = interaction.fields.getTextInputValue('feedback');
 
-		      if (!valid) {
-			            await refreshed.delete();
+    const [demo, status] = demoStatus.split('|').map(s => s.trim());
 
-			            try {
-					            await refreshed.author.send(
-							              `Hey! 👋  
+    const embed = new EmbedBuilder()
+      .setColor(TRACK_COLORS[track])
+      .setAuthor({
+        name: `${interaction.user.displayName} submitted a project`,
+        iconURL: interaction.user.displayAvatarURL(),
+      })
+      .setTitle(projectName)
+      .addFields(
+        { name: 'Track',    value: `\`${track}\``,                                          inline: true },
+        { name: 'Status',   value: `${STATUS_EMOJI[status] ?? ''} \`${status ?? 'N/A'}\``,  inline: true },
+        { name: '\u200b',   value: '\u200b',                                                  inline: true },
+        { name: 'Problem',  value: problem },
+        { name: 'What I built + how it uses RocketRide', value: built },
+        { name: 'Demo / Repo',     value: demo ?? demoStatus, inline: true },
+        { name: 'Feedback wanted', value: feedback },
+      )
+      .setFooter({ text: FOOTER_TEXT, iconURL: client.user.displayAvatarURL() })
+      .setTimestamp();
 
-							    Your post was removed because it didn’t follow the Showcase template.
+    await interaction.reply({ embeds: [embed] });
 
-							    Please repost using:
+    const reply = await interaction.fetchReply();
+    await reply.startThread({
+      name: `Feedback: ${projectName}`,
+      autoArchiveDuration: 1440,
+    });
+    return;
+  }
 
-							    ${TEMPLATE}`
-							            );
-					          } catch {
-							          console.log("Could not DM user.");
-							        }
-			          }
-		    }, 30000);
+  // /setup — lock channel + post how-to
+  if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
+    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
+      await interaction.reply({ content: 'Missing ManageChannels permission.', ephemeral: true });
+      return;
+    }
+
+    const channel = interaction.channel;
+
+    await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
+      SendMessages: false,
+    });
+
+    await channel.permissionOverwrites.edit(client.user.id, {
+      SendMessages: true,
+    });
+
+    await channel.setTopic('Use /submit to post your project. Manual messages are disabled.');
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('How to submit your project')
+      .setDescription(
+        'This channel only accepts submissions through the bot.\n' +
+        'Manual messages are disabled.\n\n' +
+        '**Run `/submit` anywhere in this server to open the form.**\n\n' +
+        'Pick your track first, then fill out a short form.\n' +
+        'The bot posts your submission here as a formatted card,\n' +
+        'and opens a feedback thread automatically.'
+      )
+      .addFields(
+        { name: 'Tracks',         value: '`Startup` · `Internal Tool` · `AI System`' },
+        { name: 'Status options', value: '`Prototype` · `MVP` · `Production`' },
+      )
+      .setFooter({ text: FOOTER_TEXT });
+
+    const button = new ButtonBuilder()
+      .setCustomId('submit_visual')
+      .setLabel('/submit')
+      .setEmoji('📦')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(true);
+
+    const row = new ActionRowBuilder().addComponents(button);
+
+    const sent = await channel.send({ embeds: [embed], components: [row] });
+    await sent.pin();
+
+    await interaction.reply({ content: 'Channel locked and pinned how-to posted.', ephemeral: true });
+    return;
+  }
 });
 
-client.once("ready", () => {
-	  console.log(`Logged in as ${client.user.tag}`);
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
 });
 
 client.login(process.env.BOT_TOKEN);
-
