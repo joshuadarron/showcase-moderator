@@ -35,6 +35,7 @@ const client = new Client({
 });
 
 client.on('interactionCreate', async (interaction) => {
+  try {
   // /submit — show track select menu
   if (interaction.isChatInputCommand() && interaction.commandName === 'submit') {
     const select = new StringSelectMenuBuilder()
@@ -203,6 +204,12 @@ client.on('interactionCreate', async (interaction) => {
 
     await interaction.reply({ content: 'Channel locked and pinned how-to posted.', ephemeral: true });
     return;
+  }
+  } catch (err) {
+    console.error('interactionCreate error:', err);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: 'Something went wrong.', ephemeral: true }).catch(() => {});
+    }
   }
 });
 
