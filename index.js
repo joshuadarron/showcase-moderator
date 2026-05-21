@@ -116,6 +116,8 @@ client.on('interactionCreate', async (interaction) => {
 
   // Modal submit → build embed + thread
   if (interaction.isModalSubmit() && interaction.customId.startsWith('submit_modal:')) {
+    await interaction.deferReply({ ephemeral: true });
+
     const track       = interaction.customId.split(':')[1];
     const projectName = interaction.fields.getTextInputValue('project_name');
     const problem     = interaction.fields.getTextInputValue('problem');
@@ -144,12 +146,15 @@ client.on('interactionCreate', async (interaction) => {
       .setFooter({ text: FOOTER_TEXT, iconURL: client.user.displayAvatarURL() })
       .setTimestamp();
 
-    await interaction.reply({ embeds: [embed] });
-
-    const reply = await interaction.fetchReply();
-    await reply.startThread({
+    const showcase = await client.channels.fetch(process.env.SHOWCASE_CHANNEL_ID);
+    const sent = await showcase.send({ embeds: [embed] });
+    await sent.startThread({
       name: `Feedback: ${projectName}`,
       autoArchiveDuration: 1440,
+    });
+
+    await interaction.editReply({
+      content: `Submitted! See your post in <#${process.env.SHOWCASE_CHANNEL_ID}>.`,
     });
     return;
   }
